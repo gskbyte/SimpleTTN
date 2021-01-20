@@ -37,7 +37,10 @@ TTNDevice *TTNDevice::initialize(const TTN_esp32_LMIC::HalPinmap_t* pinmap) {
 /// Instance functions
 
 TTNDevice::TTNDevice() {
+    _sequenceNumberUp = 0;
     _state = TTNDeviceStateIdle;
+    configure(TTNDeviceConfiguration());
+
     // Reset the MAC state. Session and pending data transfers will be discarded.
     LMIC_reset();
 }
@@ -46,33 +49,91 @@ TTNDeviceState TTNDevice::state() {
     return _state;
 }
 
-bool TTNDevice::join(std::string devEui, std::string appEui, std::string appKey,
-                     TTNDeviceConfiguration configuration) {
-    Log.trace("Joining");
-
-    _devEui = devEui;
-    _appEui = appEui;
-    _appKey = appKey;
+void TTNDevice::configure(TTNDeviceConfiguration configuration) {
     _configuration = configuration;
 
-    if (!checkKeys()) {
-        Log.error("Provided keys for joining are invalid");
-        return false;
-    }
-    
-    LMIC_setClockError(MAX_CLOCK_ERROR * 50 / 100);
-    LMIC_unjoin();
-    LMIC_startJoining();
+    // TODO set LMIC properties
 
     // TTN uses SF9 for its RX2 window.
     LMIC.dn2Dr = DR_SF9;
     // Set data rate and transmit power for uplink
     LMIC_setDrTxpow(DR_SF7, 14);
+}
 
-    // Consider not pinned to core
-    xTaskCreatePinnedToCore(taskLoop, "taskLoop", 2048, (void*)1, (5 | portPRIVILEGE_BIT), &_taskHandle, 1);
+bool TTNDevice::provision(std::string devEui, std::string appEui, std::string appKey) {
+    // TODO check keys, return false if invalid
 
+    _devEui = toBytes(devEui);
+    _appEui = toBytes(appEui);
+    _appKey = toBytes(appKey);
+
+    return true;
+}
+
+bool TTNDevice::join() {
+    Log.trace("Joining");
+    
+    LMIC_setClockError(MAX_CLOCK_ERROR * 50 / 100);
+    LMIC_unjoin();
+    LMIC_startJoining();
+    
+    this->startLoop();
+    
     _state = TTNDeviceStateJoining;
+    return true;
+}
+
+bool TTNDevice::resumeSession(std::string deviceAddress, std::string networkKey, 
+                     std::string appSessionKey, u4_t sequenceNumberUp) {
+    // TODO check keys
+    std::vector<u1_t> devAddr = toBytes(deviceAddress);
+    _deviceAddress = devAddr[0] << 24 | devAddr[1] << 16 | devAddr[2] << 8 | devAddr[3];
+    _networkKey = toBytes(networkKey);
+    _appSessionKey = toBytes(appSessionKey);
+    _sequenceNumberUp = sequenceNumberUp;
+
+    LMIC_setClockError(MAX_CLOCK_ERROR * 50 / 100);
+
+    // 0x13 is the net ID for TTN
+    LMIC_setSession(0x13, _deviceAddress, _networkKey.data(), _appSessionKey.data());
+#if defined(CFG_eu868)
+    // Set up the channels used by the Things Network, which corresponds
+    // to the defaults of most gateways. Without this, only three base
+    // channels from the LoRaWAN specification are used, which certainly
+    // works, so it is good for debugging, but can overload those
+    // frequencies, so be sure to configure the full frequency range of
+    // your network here (unless your network autoconfigures them).
+    // Setting up channels should happen after LMIC_setSession, as that
+    // configures the minimal channel set.
+    // NA-US channels 0-71 are configured automatically
+    LMIC_setupChannel(0, 868100000, DR_RANGE_MAP(DR_SF12, DR_SF7),
+        BAND_CENTI); // g-band
+    LMIC_setupChannel(1, 868300000, DR_RANGE_MAP(DR_SF12, DR_SF7B),
+        BAND_CENTI); // g-band
+    LMIC_setupChannel(2, 868500000, DR_RANGE_MAP(DR_SF12, DR_SF7),
+        BAND_CENTI); // g-band
+    LMIC_setupChannel(3, 867100000, DR_RANGE_MAP(DR_SF12, DR_SF7),
+        BAND_CENTI); // g-band
+    LMIC_setupChannel(4, 867300000, DR_RANGE_MAP(DR_SF12, DR_SF7),
+        BAND_CENTI); // g-band
+    LMIC_setupChannel(5, 867500000, DR_RANGE_MAP(DR_SF12, DR_SF7),
+        BAND_CENTI); // g-band
+    LMIC_setupChannel(6, 867700000, DR_RANGE_MAP(DR_SF12, DR_SF7),
+        BAND_CENTI); // g-band
+    LMIC_setupChannel(7, 867900000, DR_RANGE_MAP(DR_SF12, DR_SF7),
+        BAND_CENTI); // g-band
+    LMIC_setupChannel(8, 868800000, DR_RANGE_MAP(DR_FSK, DR_FSK),
+        BAND_MILLI); // g2-band
+#endif
+
+
+    LMIC_setLinkCheckMode(0);
+    LMIC.dn2Dr = DR_SF9;
+    LMIC_setDrTxpow(DR_SF7, 14);
+    LMIC_setSeqnoUp(sequenceNumberUp);
+
+    this->startLoop();
+    _state = TTNDeviceStateReady;
     return true;
 }
 
@@ -80,23 +141,28 @@ void TTNDevice::stop() {
     Log.trace("Stopping");
     if (_taskHandle != nullptr) {
         LMIC_reset();
-        vTaskDelete(_taskHandle);
+        this->stopLoop();
         _taskHandle = nullptr;
     }
     _state = TTNDeviceStateIdle;
 }
 
-bool TTNDevice::poll(uint8_t port) {
-    Log.trace("Polling");
+bool TTNDevice::poll(uint8_t port, bool confirm) {
+    Log.trace("Polling on port %i", port);
     if (_state != TTNDeviceStateReady) {
         Log.error("Can't poll in state %s", describe(_state).c_str());
         return false;
     }
+    if (LMIC.opmode & OP_TXRXPEND) {
+        Log.error("LMIC indicates there's a pending transaction, cancelling poll.");
+        return false;
+    }
 
-    LMIC_setTxData2(port, 0, 1, 1);
+    LMIC_setTxData2(port, nullptr, 1, confirm ? 1 : 0);
+    return true;
 }
 
-bool TTNDevice::send(std::vector<uint8_t> message, uint8_t port) {
+bool TTNDevice::send(std::vector<uint8_t> message, uint8_t port, bool confirm) {
     Log.trace("Sending data on port %i: %s", port, describe(message).c_str());
 
     if (_state != TTNDeviceStateReady) {
@@ -112,7 +178,8 @@ bool TTNDevice::send(std::vector<uint8_t> message, uint8_t port) {
     _pendingMessage = message;
     _state = TTNDeviceStateTransceiving;
 
-    LMIC_setTxData2(port, message.data(), (u1_t) message.size(), (u1_t)1);
+    LMIC_setTxData2(port, message.data(), (u1_t) message.size(), confirm ? 1 : 0);
+    return true;
 }
 
 // void TTNDevice::sendMessageAsync(std::vector<uint8_t> data) {
@@ -132,20 +199,19 @@ std::string TTNDevice::statusDescription() {
     if (_pendingMessage.size() > 0) {
         stream << "Pending message: " << describe(_pendingMessage) << std::endl;
     }
-    stream << "DevEUI: " << _devEui << std::endl;
-    stream << "AppEUI: " << _appEui << std::endl;
-    stream << "AppKey: " << _appKey << std::endl;
+    stream << "DevEUI: " << describe(_devEui) << std::endl;
+    stream << "AppEUI: " << describe(_appEui) << std::endl;
+    stream << "AppKey: " << describe(_appKey) << std::endl;
 
-    stream << std::hex;
-    stream << "LMIC netID: " << std::hex << _lmic_netId << std::endl;
-    stream << "LMIC devAddr: " << std::hex << _lmic_devAddr << std::endl;
-    stream << "LMIC nwkKey: " << describe(_lmic_nwkKey, 16) << std::endl;
-    stream << "LMIC artKey: " << describe(_lmic_artKey, 16) << std::endl;
+    stream << "LMIC deviceAddress: " << describe(_deviceAddress) << std::endl;
+    stream << "LMIC networkKey: " << describe(_networkKey) << std::endl;
+    stream << "LMIC appSessionKey: " << describe(_appSessionKey) << std::endl;
+    stream << "LMIC seqNumUp: " << _sequenceNumberUp << std::endl;
 
-    stream << std::dec;
-    stream << "LMIC dataRate: " << _lmic_devAddr << std::endl;
-    stream << "LMIC txPower: " << _lmic_devAddr << " dB" << std::endl;
-    stream << "LMIC freq: " <<  _lmic_devAddr << " Hz" << std::endl;
+    // stream << std::dec;
+    // stream << "LMIC dataRate: " << _lmic_devAddr << std::endl;
+    // stream << "LMIC txPower: " << _lmic_devAddr << " dB" << std::endl;
+    // stream << "LMIC freq: " <<  _lmic_devAddr << " Hz" << std::endl;
 
     stream << "-----------------------------";
 
@@ -153,17 +219,6 @@ std::string TTNDevice::statusDescription() {
 }
 
 /// PRIVATE
-void TTNDevice::taskLoop(void* parameter) {
-    for (;;) {
-        os_runloop_once();
-        vTaskDelay(1 / portTICK_PERIOD_MS); // delay 1 ms each run loop
-    }
-}
-
-bool TTNDevice::checkKeys() {
-    // TODO
-    return true;
-}
 
 void TTNDevice::handleEvent_JOINING() {
     Log.trace("handleEvent_JOINING");
@@ -173,9 +228,19 @@ void TTNDevice::handleEvent_JOINING() {
 
 void TTNDevice::handleEvent_JOINED() {
     Log.trace("handleEvent_JOINED");
-    LMIC_getSessionKeys(&_lmic_netId, &_lmic_devAddr, _lmic_nwkKey, _lmic_artKey);
+
+    u4_t lmic_netId;
+    devaddr_t lmic_devAddr;
+    u1_t lmic_nwkKey[16];
+    u1_t lmic_artKey[16];
+    LMIC_getSessionKeys(&lmic_netId, &lmic_devAddr, lmic_nwkKey, lmic_artKey);
+
+    _deviceAddress = lmic_devAddr;
+    _networkKey.assign(lmic_nwkKey, lmic_nwkKey+16);
+    _appSessionKey.assign(lmic_artKey, lmic_artKey+16);
+
     LMIC_setLinkCheckMode(_configuration.linkCheckEnabled ? 1 : 0);
-    
+
     // TODO log current state
     _state = TTNDeviceStateReady;
 }
@@ -201,6 +266,8 @@ void TTNDevice::handleEvent_TXCOMPLETE() {
         Log.notice("TXCOMPLETE while not transceiving");
     }
     
+    _sequenceNumberUp = LMIC.seqnoUp;
+    Log.notice("sequenceNumberUp: %i", _sequenceNumberUp);
     Log.notice("txrxFlags: %B", LMIC.txrxFlags);
     if (LMIC.txrxFlags & TXRX_ACK) {
         Log.notice("Received ACK");
@@ -210,7 +277,7 @@ void TTNDevice::handleEvent_TXCOMPLETE() {
 
     std::vector<u1_t> data;
     if (LMIC.dataLen) {
-      u1_t offset = 9;// offset to get data.
+      u1_t offset = LMIC.dataBeg; // offset to get data.
       data.insert(data.end(), LMIC.frame + offset, LMIC.frame + offset + LMIC.dataLen);
       Log.trace("Received data (%i bytes, dataBeg %i): %s", LMIC.dataLen, LMIC.dataBeg, describe(data).c_str());
     }
@@ -224,22 +291,38 @@ void TTNDevice::handleEvent_TXCOMPLETE() {
     // TODO: call general callback message
 }
 
+void TTNDevice::taskLoop(void* parameter) {
+    for (;;) {
+        os_runloop_once();
+        vTaskDelay(16 / portTICK_PERIOD_MS); // delay 16 ms each run loop
+    }
+}
+
+void TTNDevice::startLoop() {
+    // TODO: Consider not pinned to core
+    xTaskCreatePinnedToCore(taskLoop, "taskLoop", 2048, (void*)1, (5 | portPRIVILEGE_BIT), &_taskHandle, 1);
+}
+
+void TTNDevice::stopLoop() {
+    vTaskDelete(_taskHandle);
+    _taskHandle = 0;
+}
 
 /// LMIC Callbacks
 void os_getArtEui(u1_t* buf) {
-    std::vector<uint8_t> b = hexStrToBin(TTNDevice::instance()->_appEui);
+    std::vector<uint8_t> b = TTNDevice::instance()->_appEui;
     std::reverse(b.begin(),  b.end());  
     std::copy(b.begin(), b.end(), buf);
 }
 
 void os_getDevEui(u1_t* buf) {
-    std::vector<uint8_t> b = hexStrToBin(TTNDevice::instance()->_devEui);
+    std::vector<uint8_t> b = TTNDevice::instance()->_devEui;
     std::reverse(b.begin(),  b.end());  
     std::copy(b.begin(), b.end(), buf);
 }
 
 void os_getDevKey(u1_t* buf) {
-    std::vector<uint8_t> b = hexStrToBin(TTNDevice::instance()->_appKey);
+    std::vector<uint8_t> b = TTNDevice::instance()->_appKey;
     std::copy(b.begin(), b.end(), buf);
 }
 

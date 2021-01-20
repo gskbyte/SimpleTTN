@@ -1,24 +1,31 @@
-#ifndef Util_H
-#define Util_h
+#ifndef Debug_h
+#define Debug_h
 
 #include <sstream>
-
-std::string describe(std::vector<u1_t> value) {
-    std::stringstream stream;
-    stream << std::hex;
-    for(int i=0; i<value.size(); ++i) {
-        stream << (int) value[i] << " ";
-    }
-    return stream.str();
-}
 
 std::string describe(u1_t *array, int length) {
     std::stringstream stream;
     stream << std::hex;
     for(int i=0; i<length; ++i) {
-        stream << (int) array[i] << " ";
+        unsigned int byte = array[i];
+        if (byte == 0) {
+            stream << "00";
+        } else if (byte < 16) {
+            stream << "0" << byte;
+        } else {
+            stream << byte;
+        }
+        // stream << " ";
     }
     return stream.str();
+}
+
+std::string describe(u4_t value) {
+    return describe((u1_t *)&value, 4);
+}
+
+std::string describe(std::vector<u1_t> value) {
+    return describe(value.data(), value.size());
 }
 
 static const char* const sEventNames[] = {LMIC_EVENT_NAME_TABLE__INIT};
@@ -47,4 +54,4 @@ std::string describe(TTNDeviceState state) {
     }
 }
 
-#endif // Util_h
+#endif // Debug_h

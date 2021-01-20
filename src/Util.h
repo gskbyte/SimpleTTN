@@ -1,12 +1,8 @@
-#ifndef Util_H
+#ifndef Util_h
 #define Util_h
 
 #include <vector>
 #include <sstream>
-
-#define STTN_LOG_LEVEL_ERROR   0
-#define STTN_LOG_LEVEL_WARNING 1
-#define STTN_LOG_LEVEL_DEBUG   2
 
 static uint8_t hexCharToUInt8(char ch) {
     if (ch >= '0' && ch <= '9') {
@@ -19,7 +15,7 @@ static uint8_t hexCharToUInt8(char ch) {
     return UINT8_MAX;
 }
 
-std::vector<uint8_t> hexStrToBin(std::string str) {
+static std::vector<uint8_t> toBytes(std::string str) {
   if (str.length() == 0 || str.length()%2!=0) {
     Serial.println("Invalid value for bin ");
     return std::vector<uint8_t>();
@@ -36,6 +32,30 @@ std::vector<uint8_t> hexStrToBin(std::string str) {
     }
     result.push_back( (first<<4)|second );
   }
+  return result;
+}
+
+static uint32_t toInt32(std::string str) {
+  if (str.length() != 8) {
+    Serial.println("Invalid value for bin ");
+    return 0;
+  }
+
+  uint32_t result = 0;
+  const char *hex = str.c_str();
+  while (*hex) {
+      char c = *hex++; 
+      uint8_t byte = hexCharToUInt8(c);
+      // shift 4 to make space for new digit, and add the 4 bits of the new digit 
+      result = (result << 4) | (byte & 0xF);
+  }
+  return result;
+}
+
+static std::vector<uint8_t> toBytes(uint32_t number) {
+  std::vector<uint8_t> result(4);
+  for (int i = 0; i < 4; i++)
+      result[3 - i] = (number >> (i * 8));
   return result;
 }
 
