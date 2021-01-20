@@ -51,12 +51,23 @@ public:
     bool poll(uint8_t port, bool confirm = false);
     bool send(std::vector<uint8_t> message, uint8_t port, bool confirm = false);
 
+
     // TODO
     // void onMessage(void (*callback)(const uint8_t* payload, size_t size, int rssi));
 
-    // TODO add getters for keys and various states
     // TODO configure transmission power, data rate,
     // TODO getters for mac, frequency, etc
+
+    // OTAA parameters
+    std::string deviceEUI() const;
+    std::string appEUI() const;
+    std::string appKey() const;
+
+    // Session parameters
+    std::string deviceAddress() const;
+    std::string networkKey() const;
+    std::string appSessionKey() const;
+    uint32_t sequenceNumberUp() const;
 
     std::string statusDescription();
 
@@ -73,10 +84,10 @@ protected:
     std::vector<uint8_t> _appKey;
 
     // Session state
-    u4_t _deviceAddress;
+    std::vector<uint8_t> _deviceAddress;
     std::vector<uint8_t> _networkKey;
     std::vector<uint8_t> _appSessionKey;
-    u4_t _sequenceNumberUp;
+    uint32_t _sequenceNumberUp;
 
     TTNDeviceConfiguration _configuration;
 

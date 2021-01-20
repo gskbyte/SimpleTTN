@@ -86,8 +86,7 @@ bool TTNDevice::join() {
 bool TTNDevice::resumeSession(std::string deviceAddress, std::string networkKey, 
                      std::string appSessionKey, u4_t sequenceNumberUp) {
     // TODO check keys
-    std::vector<u1_t> devAddr = toBytes(deviceAddress);
-    _deviceAddress = devAddr[0] << 24 | devAddr[1] << 16 | devAddr[2] << 8 | devAddr[3];
+    _deviceAddress = toBytes(deviceAddress);
     _networkKey = toBytes(networkKey);
     _appSessionKey = toBytes(appSessionKey);
     _sequenceNumberUp = sequenceNumberUp;
@@ -95,7 +94,8 @@ bool TTNDevice::resumeSession(std::string deviceAddress, std::string networkKey,
     LMIC_setClockError(MAX_CLOCK_ERROR * 50 / 100);
 
     // 0x13 is the net ID for TTN
-    LMIC_setSession(0x13, _deviceAddress, _networkKey.data(), _appSessionKey.data());
+    uint32_t swappedAddress = _deviceAddress[0] << 24 | _deviceAddress[1] << 16 | _deviceAddress[2] << 8 | _deviceAddress[3];
+    LMIC_setSession(0x13, swappedAddress, _networkKey.data(), _appSessionKey.data());
 #if defined(CFG_eu868)
     // Set up the channels used by the Things Network, which corresponds
     // to the defaults of most gateways. Without this, only three base
@@ -190,6 +190,34 @@ bool TTNDevice::send(std::vector<uint8_t> message, uint8_t port, bool confirm) {
     
 // }
 
+std::string TTNDevice::deviceEUI() const {
+    return describe(_devEui);
+}
+
+std::string TTNDevice::appEUI() const {
+    return describe(_appEui);
+}
+
+std::string TTNDevice::appKey() const {
+    return describe(_appKey);
+}
+
+std::string TTNDevice::deviceAddress() const {
+    return describe(_deviceAddress);
+}
+
+std::string TTNDevice::networkKey() const {
+    return describe(_networkKey);
+}
+
+std::string TTNDevice::appSessionKey() const {
+    return describe(_appSessionKey);
+}
+
+uint32_t TTNDevice::sequenceNumberUp() const {
+    return _sequenceNumberUp;
+}
+
 std::string TTNDevice::statusDescription() {
     std::stringstream stream;
 
@@ -199,14 +227,14 @@ std::string TTNDevice::statusDescription() {
     if (_pendingMessage.size() > 0) {
         stream << "Pending message: " << describe(_pendingMessage) << std::endl;
     }
-    stream << "DevEUI: " << describe(_devEui) << std::endl;
-    stream << "AppEUI: " << describe(_appEui) << std::endl;
-    stream << "AppKey: " << describe(_appKey) << std::endl;
+    stream << "DevEUI: " << this->deviceEUI() << std::endl;
+    stream << "AppEUI: " << this->appEUI() << std::endl;
+    stream << "AppKey: " << this->appKey() << std::endl;
 
-    stream << "LMIC deviceAddress: " << describe(_deviceAddress) << std::endl;
-    stream << "LMIC networkKey: " << describe(_networkKey) << std::endl;
-    stream << "LMIC appSessionKey: " << describe(_appSessionKey) << std::endl;
-    stream << "LMIC seqNumUp: " << _sequenceNumberUp << std::endl;
+    stream << "LMIC deviceAddress: " << this->deviceAddress() << std::endl;
+    stream << "LMIC networkKey: " << this->networkKey() << std::endl;
+    stream << "LMIC appSessionKey: " << this->appSessionKey() << std::endl;
+    stream << "LMIC seqNumUp: " << this->sequenceNumberUp() << std::endl;
 
     // stream << std::dec;
     // stream << "LMIC dataRate: " << _lmic_devAddr << std::endl;
@@ -229,15 +257,18 @@ void TTNDevice::handleEvent_JOINING() {
 void TTNDevice::handleEvent_JOINED() {
     Log.trace("handleEvent_JOINED");
 
-    u4_t lmic_netId;
-    devaddr_t lmic_devAddr;
-    u1_t lmic_nwkKey[16];
-    u1_t lmic_artKey[16];
-    LMIC_getSessionKeys(&lmic_netId, &lmic_devAddr, lmic_nwkKey, lmic_artKey);
+    u4_t netId;
+    devaddr_t devAddr;
+    u1_t nwkKey[16];
+    u1_t artKey[16];
+    LMIC_getSessionKeys(&netId, &devAddr, nwkKey, artKey);
 
-    _deviceAddress = lmic_devAddr;
-    _networkKey.assign(lmic_nwkKey, lmic_nwkKey+16);
-    _appSessionKey.assign(lmic_artKey, lmic_artKey+16);
+    _deviceAddress = { (u1_t)(devAddr >> 24),
+        (u1_t)(devAddr >> 16), 
+        (u1_t)(devAddr >> 8), 
+        (u1_t)(devAddr)};
+    _networkKey.assign(nwkKey, nwkKey+16);
+    _appSessionKey.assign(artKey, artKey+16);
 
     LMIC_setLinkCheckMode(_configuration.linkCheckEnabled ? 1 : 0);
 
@@ -253,18 +284,11 @@ void TTNDevice::handleEvent_JOIN_FAILED() {
 
 void TTNDevice::handleEvent_TXSTART() {
     Log.trace("handleEvent_TXSTART");
-    if (_state != TTNDeviceStateTransceiving) {
-        /// Log with debug level, this is called for other things like joining
-        Log.notice("TXSTART while not transceiving");
-    }
+
 }
 
 void TTNDevice::handleEvent_TXCOMPLETE() {
     Log.trace("handleEvent_TXCOMPLETE");
-    if (_state != TTNDeviceStateTransceiving) {
-        /// Log with debug level, this is called for other things like joining
-        Log.notice("TXCOMPLETE while not transceiving");
-    }
     
     _sequenceNumberUp = LMIC.seqnoUp;
     Log.notice("sequenceNumberUp: %i", _sequenceNumberUp);
