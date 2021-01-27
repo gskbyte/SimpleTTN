@@ -27,6 +27,8 @@ TTNDevice *TTNDevice::initialize(const TTN_esp32_LMIC::HalPinmap_t* pinmap) {
 
     bool success = os_init_ex(pinmap);
     if (success) {
+        // Reset the MAC state. Session and pending data transfers will be discarded.
+        LMIC_reset();
         sInstance = new TTNDevice();
     } else {
         Log.fatal("Couldn't initialize device, check pinmap.");
@@ -40,9 +42,6 @@ TTNDevice::TTNDevice() {
     _sequenceNumberUp = 0;
     _state = TTNDeviceStateIdle;
     configure(TTNDeviceConfiguration());
-
-    // Reset the MAC state. Session and pending data transfers will be discarded.
-    LMIC_reset();
 }
 
 TTNDeviceState TTNDevice::state() {
@@ -52,12 +51,14 @@ TTNDeviceState TTNDevice::state() {
 void TTNDevice::configure(TTNDeviceConfiguration configuration) {
     _configuration = configuration;
 
-    // TODO set LMIC properties
+    // TODO set LMIC properties and allow configuring them
 
     // TTN uses SF9 for its RX2 window.
     LMIC.dn2Dr = DR_SF9;
     // Set data rate and transmit power for uplink
     LMIC_setDrTxpow(DR_SF7, 14);
+    // Allow 7% clock errors
+    LMIC_setClockError(MAX_CLOCK_ERROR * 7 / 100);
 }
 
 bool TTNDevice::provision(std::string devEui, std::string appEui, std::string appKey) {
@@ -73,7 +74,6 @@ bool TTNDevice::provision(std::string devEui, std::string appEui, std::string ap
 bool TTNDevice::join() {
     Log.trace("Joining");
     
-    LMIC_setClockError(MAX_CLOCK_ERROR * 50 / 100);
     LMIC_unjoin();
     LMIC_startJoining();
     
@@ -90,8 +90,6 @@ bool TTNDevice::resumeSession(std::string deviceAddress, std::string networkKey,
     _networkKey = toBytes(networkKey);
     _appSessionKey = toBytes(appSessionKey);
     _sequenceNumberUp = sequenceNumberUp;
-
-    LMIC_setClockError(MAX_CLOCK_ERROR * 50 / 100);
 
     // 0x13 is the net ID for TTN
     uint32_t swappedAddress = _deviceAddress[0] << 24 | _deviceAddress[1] << 16 | _deviceAddress[2] << 8 | _deviceAddress[3];
@@ -178,7 +176,7 @@ bool TTNDevice::send(std::vector<uint8_t> message, uint8_t port, bool confirm) {
     _pendingMessage = message;
     _state = TTNDeviceStateTransceiving;
 
-    LMIC_setTxData2(port, message.data(), (u1_t) message.size(), confirm ? 1 : 0);
+    LMIC_setTxData2(port, _pendingMessage.data(), _pendingMessage.size(), confirm ? 1 : 0);
     return true;
 }
 
@@ -276,6 +274,11 @@ void TTNDevice::handleEvent_JOINED() {
     _state = TTNDeviceStateReady;
 }
 
+void TTNDevice::handleEvent_JOIN_TXCOMPLETE() {
+    Log.trace("handleEvent_JOIN_TXCOMPLETE");
+    Log.warning("Waiting to join - Reuse previous keys if possible");
+}
+
 void TTNDevice::handleEvent_JOIN_FAILED() {
     Log.trace("handleEvent_JOIN_FAILED");
     // TODO Log error
@@ -292,7 +295,7 @@ void TTNDevice::handleEvent_TXCOMPLETE() {
     
     _sequenceNumberUp = LMIC.seqnoUp;
     Log.notice("sequenceNumberUp: %i", _sequenceNumberUp);
-    Log.notice("txrxFlags: %B", LMIC.txrxFlags);
+    Log.notice("txrxFlags: %b", LMIC.txrxFlags);
     if (LMIC.txrxFlags & TXRX_ACK) {
         Log.notice("Received ACK");
         // todo invoke callback for blocking send   
@@ -310,9 +313,9 @@ void TTNDevice::handleEvent_TXCOMPLETE() {
         _state = TTNDeviceStateReady;
         _pendingMessage = {};
     }
-        // TODO invoke callback
 
     // TODO: call general callback message
+
 }
 
 void TTNDevice::taskLoop(void* parameter) {
@@ -359,11 +362,15 @@ void onEvent(ev_t event) {
     case EV_JOINED:
         dev->handleEvent_JOINED();
         break;
+    case EV_JOIN_TXCOMPLETE:
+        dev->handleEvent_JOIN_TXCOMPLETE();
+        break;
     case EV_JOIN_FAILED:
         dev->handleEvent_JOIN_FAILED();
         break;
     case EV_TXSTART:
         dev->handleEvent_TXSTART();
+        break;
     case EV_TXCOMPLETE:
         dev->handleEvent_TXCOMPLETE();
         break;

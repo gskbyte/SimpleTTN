@@ -74,6 +74,7 @@ public:
 protected:
     void handleEvent_JOINING();
     void handleEvent_JOINED();
+    void handleEvent_JOIN_TXCOMPLETE();
     void handleEvent_JOIN_FAILED();
     void handleEvent_TXSTART();
     void handleEvent_TXCOMPLETE();
