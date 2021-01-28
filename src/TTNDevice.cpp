@@ -61,7 +61,7 @@ void TTNDevice::configure(TTNDeviceConfiguration configuration) {
     LMIC_setClockError(MAX_CLOCK_ERROR * 7 / 100);
 }
 
-bool TTNDevice::provision(std::string devEui, std::string appEui, std::string appKey) {
+bool TTNDevice::provisionOTAA(std::string devEui, std::string appEui, std::string appKey) {
     // TODO check keys, return false if invalid
 
     _devEui = toBytes(devEui);
@@ -83,7 +83,7 @@ bool TTNDevice::join() {
     return true;
 }
 
-bool TTNDevice::resumeSession(std::string deviceAddress, std::string networkKey, 
+bool TTNDevice::provisionABP(std::string deviceAddress, std::string networkKey, 
                      std::string appSessionKey, u4_t sequenceNumberUp) {
     // TODO check keys
     _deviceAddress = toBytes(deviceAddress);

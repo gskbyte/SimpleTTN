@@ -42,10 +42,10 @@ public:
     // returns false if keys are bad
     bool ready();
     void configure(TTNDeviceConfiguration configuration = TTNDeviceConfiguration());
-    bool provision(std::string devEui, std::string appEui, std::string appKey);
+    bool provisionOTAA(std::string devEui, std::string appEui, std::string appKey);
+    bool provisionABP(std::string deviceAddress, std::string networkKey, 
+                       std::string appSessionKey, u4_t sequenceNumberUp = 0);
     bool join();
-    bool resumeSession(std::string deviceAddress, std::string networkKey, 
-                       std::string appSessionKey, u4_t sequenceNumberUp);
     void stop();
 
     bool poll(uint8_t port, bool confirm = false);
@@ -63,7 +63,7 @@ public:
     std::string appEUI() const;
     std::string appKey() const;
 
-    // Session parameters
+    // ABP and session parameters
     std::string deviceAddress() const;
     std::string networkKey() const;
     std::string appSessionKey() const;
