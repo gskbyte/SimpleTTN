@@ -1,5 +1,5 @@
-#ifndef Util_h
-#define Util_h
+#ifndef SimpleTTNUtil_h
+#define SimpleTTNUtil_h
 
 #include <vector>
 #include <sstream>

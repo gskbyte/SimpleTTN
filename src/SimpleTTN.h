@@ -1,47 +1,47 @@
-#ifndef TTNDevice_h
-#define TTNDevice_h
+#ifndef SimpleTTN_h
+#define SimpleTTN_h
 
 #include "Arduino.h"
 #include "lmic/lmic.h"
 #include "lmic/arduino_lmic_hal_boards.h"
 
-enum TTNDeviceState {
-    TTNDeviceStateIdle,
+enum SimpleTTNState {
+    SimpleTTNStateIdle,
 
-    TTNDeviceStateJoining,
-    TTNDeviceStateJoinFailed,
+    SimpleTTNStateJoining,
+    SimpleTTNStateJoinFailed,
 
-    TTNDeviceStateReady,
+    SimpleTTNStateReady,
 
-    TTNDeviceStateTransceiving,
+    SimpleTTNStateTransceiving,
 
-    TTNDeviceStateDisconnected
+    SimpleTTNStateDisconnected
 };
 
 // For more information: http://wiki.lahoud.fr/lib/exe/fetch.php?media=lmic-v1.5.pdf
-struct TTNDeviceConfiguration {
+struct SimpleTTNConfiguration {
     // Periodically checks whether a connection is established.
     // Defaults to false because of incomplete support (default true in LMIC);
     bool linkCheckEnabled = false;
 };
 
-class TTNDevice {
+class SimpleTTN {
 public:
-    static TTNDevice *instance();
-    static TTNDevice *initialize();
-    static TTNDevice *initialize(const TTN_esp32_LMIC::HalPinmap_t* pinmap);
+    static SimpleTTN *instance();
+    static SimpleTTN *initialize();
+    static SimpleTTN *initialize(const TTN_esp32_LMIC::HalPinmap_t* pinmap);
 
 private:
     // Private constructor: class must be initialized via singleton methods.
-    TTNDevice();
+    SimpleTTN();
 
 public:
-    TTNDeviceState state();
+    SimpleTTNState state();
 
     // TODO add retry support
     // returns false if keys are bad
     bool ready();
-    void configure(TTNDeviceConfiguration configuration = TTNDeviceConfiguration());
+    void configure(SimpleTTNConfiguration configuration = SimpleTTNConfiguration());
     bool provisionOTAA(std::string devEui, std::string appEui, std::string appKey);
     bool provisionABP(std::string deviceAddress, std::string networkKey, 
                        std::string appSessionKey, u4_t sequenceNumberUp = 0);
@@ -90,9 +90,9 @@ protected:
     std::vector<uint8_t> _appSessionKey;
     uint32_t _sequenceNumberUp;
 
-    TTNDeviceConfiguration _configuration;
+    SimpleTTNConfiguration _configuration;
 
-    TTNDeviceState _state;
+    SimpleTTNState _state;
     std::vector<uint8_t> _pendingMessage;
 private:
     // Loop function for the TTN task.
@@ -109,4 +109,4 @@ private:
     friend void onEvent(ev_t event);
 };
 
-#endif // TTNDevice_h
+#endif // SimpleTTN_h

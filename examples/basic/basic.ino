@@ -1,4 +1,4 @@
-#include <TTNDevice.h>
+#include <SimpleTTN.h>
 #include <ArduinoLog.h>
 
 bool useOTAA = true;
@@ -17,7 +17,7 @@ void printNewline(Print* _logOutput) {
   _logOutput->println();
 }
  
-TTNDevice *dev;
+SimpleTTN *dev;
 bool resumeLastSession = false;
 
 void setup() {
@@ -28,7 +28,7 @@ void setup() {
   Log.begin(LOG_LEVEL_VERBOSE, &Serial, true);
   Log.setSuffix(printNewline);
  
-  dev = TTNDevice::initialize();
+  dev = SimpleTTN::initialize();
 
   if (useOTAA) {
     dev->provisionOTAA(otaaDevEui, otaaAppEui, otaaAppKey);
@@ -38,7 +38,7 @@ void setup() {
 
   dev->join();
 
-  while(dev->state() == TTNDeviceStateJoining);
+  while(dev->state() == SimpleTTNStateJoining);
   Serial.println("Joined!");
   Serial.println(dev->statusDescription().c_str());
   delay(1000);
@@ -46,7 +46,7 @@ void setup() {
  
 u1_t val = 1;
 void loop() {
-  if (dev->state() == TTNDeviceStateReady) {
+  if (dev->state() == SimpleTTNStateReady) {
     if (val % 2 == 1) {
       Serial.println("Sending");
       dev->send({val, val, val}, 2);

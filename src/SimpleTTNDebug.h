@@ -1,9 +1,9 @@
-#ifndef Debug_h
-#define Debug_h
+#ifndef SimpleTTNDebug_h
+#define SimpleTTNDebug_h
 
 #include <sstream>
 
-std::string describe(u1_t *array, int length) {
+std::string describe(const u1_t *array, int length) {
     std::stringstream stream;
     stream << std::hex;
     for(int i=0; i<length; ++i) {
@@ -24,7 +24,7 @@ std::string describe(u4_t value) {
     return describe((u1_t *)&value, 4);
 }
 
-std::string describe(std::vector<u1_t> value) {
+std::string describe(const std::vector<u1_t> &value) {
     return describe(value.data(), value.size());
 }
 
@@ -37,19 +37,19 @@ std::string describe(ev_t event) {
     }
 }
 
-std::string describe(TTNDeviceState state) {
+std::string describe(SimpleTTNState state) {
     switch(state) {
-    case TTNDeviceStateIdle:
+    case SimpleTTNStateIdle:
         return "idle";
-    case TTNDeviceStateJoining:
+    case SimpleTTNStateJoining:
         return "joining";
-    case TTNDeviceStateJoinFailed:
+    case SimpleTTNStateJoinFailed:
         return "join_failed";
-    case TTNDeviceStateReady:
+    case SimpleTTNStateReady:
         return "ready";
-    case TTNDeviceStateTransceiving:
+    case SimpleTTNStateTransceiving:
         return "transceiving";
-    case TTNDeviceStateDisconnected:
+    case SimpleTTNStateDisconnected:
         return "disconnected";
     }
 }

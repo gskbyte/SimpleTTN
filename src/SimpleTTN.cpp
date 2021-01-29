@@ -1,27 +1,27 @@
-#include "TTNDevice.h"
+#include "SimpleTTN.h"
 
-#include "Debug.h"
-#include "Util.h"
+#include "SimpleTTNDebug.h"
+#include "SimpleTTNUtil.h"
 
 #include "lmic/lmic/oslmic.h"
 #include <ArduinoLog.h>
 
 /// Static stuff
 
-static TTNDevice *sInstance = nullptr;
+static SimpleTTN *sInstance = nullptr;
 
-TTNDevice *TTNDevice::instance() {
+SimpleTTN *SimpleTTN::instance() {
     return sInstance;
 }
 
-TTNDevice *TTNDevice::initialize() {
+SimpleTTN *SimpleTTN::initialize() {
     return initialize(TTN_esp32_LMIC::GetPinmap_ThisBoard());
 }
 
-TTNDevice *TTNDevice::initialize(const TTN_esp32_LMIC::HalPinmap_t* pinmap) {
+SimpleTTN *SimpleTTN::initialize(const TTN_esp32_LMIC::HalPinmap_t* pinmap) {
     Log.trace("Initializing");
     if (sInstance) {
-        Log.warning("Global TTNDevice object existed, being replaced");
+        Log.warning("Global SimpleTTN object existed, being replaced");
         delete sInstance;
     }
 
@@ -29,7 +29,7 @@ TTNDevice *TTNDevice::initialize(const TTN_esp32_LMIC::HalPinmap_t* pinmap) {
     if (success) {
         // Reset the MAC state. Session and pending data transfers will be discarded.
         LMIC_reset();
-        sInstance = new TTNDevice();
+        sInstance = new SimpleTTN();
     } else {
         Log.fatal("Couldn't initialize device, check pinmap.");
     }
@@ -38,17 +38,17 @@ TTNDevice *TTNDevice::initialize(const TTN_esp32_LMIC::HalPinmap_t* pinmap) {
 
 /// Instance functions
 
-TTNDevice::TTNDevice() {
+SimpleTTN::SimpleTTN() {
     _sequenceNumberUp = 0;
-    _state = TTNDeviceStateIdle;
-    configure(TTNDeviceConfiguration());
+    _state = SimpleTTNStateIdle;
+    configure(SimpleTTNConfiguration());
 }
 
-TTNDeviceState TTNDevice::state() {
+SimpleTTNState SimpleTTN::state() {
     return _state;
 }
 
-void TTNDevice::configure(TTNDeviceConfiguration configuration) {
+void SimpleTTN::configure(SimpleTTNConfiguration configuration) {
     _configuration = configuration;
 
     // TODO set LMIC properties and allow configuring them
@@ -61,7 +61,7 @@ void TTNDevice::configure(TTNDeviceConfiguration configuration) {
     LMIC_setClockError(MAX_CLOCK_ERROR * 7 / 100);
 }
 
-bool TTNDevice::provisionOTAA(std::string devEui, std::string appEui, std::string appKey) {
+bool SimpleTTN::provisionOTAA(std::string devEui, std::string appEui, std::string appKey) {
     // TODO check keys, return false if invalid
 
     _devEui = toBytes(devEui);
@@ -71,7 +71,7 @@ bool TTNDevice::provisionOTAA(std::string devEui, std::string appEui, std::strin
     return true;
 }
 
-bool TTNDevice::join() {
+bool SimpleTTN::join() {
     Log.trace("Joining");
     
     LMIC_unjoin();
@@ -79,11 +79,11 @@ bool TTNDevice::join() {
     
     this->startLoop();
     
-    _state = TTNDeviceStateJoining;
+    _state = SimpleTTNStateJoining;
     return true;
 }
 
-bool TTNDevice::provisionABP(std::string deviceAddress, std::string networkKey, 
+bool SimpleTTN::provisionABP(std::string deviceAddress, std::string networkKey,
                      std::string appSessionKey, u4_t sequenceNumberUp) {
     // TODO check keys
     _deviceAddress = toBytes(deviceAddress);
@@ -131,23 +131,23 @@ bool TTNDevice::provisionABP(std::string deviceAddress, std::string networkKey,
     LMIC_setSeqnoUp(sequenceNumberUp);
 
     this->startLoop();
-    _state = TTNDeviceStateReady;
+    _state = SimpleTTNStateReady;
     return true;
 }
 
-void TTNDevice::stop() {
+void SimpleTTN::stop() {
     Log.trace("Stopping");
     if (_taskHandle != nullptr) {
         LMIC_reset();
         this->stopLoop();
         _taskHandle = nullptr;
     }
-    _state = TTNDeviceStateIdle;
+    _state = SimpleTTNStateIdle;
 }
 
-bool TTNDevice::poll(uint8_t port, bool confirm) {
+bool SimpleTTN::poll(uint8_t port, bool confirm) {
     Log.trace("Polling on port %i", port);
-    if (_state != TTNDeviceStateReady) {
+    if (_state != SimpleTTNStateReady) {
         Log.error("Can't poll in state %s", describe(_state).c_str());
         return false;
     }
@@ -160,10 +160,10 @@ bool TTNDevice::poll(uint8_t port, bool confirm) {
     return true;
 }
 
-bool TTNDevice::send(std::vector<uint8_t> message, uint8_t port, bool confirm) {
-    Log.trace("Sending data on port %i: %s", port, describe(message).c_str());
+bool SimpleTTN::send(std::vector<uint8_t> message, uint8_t port, bool confirm) {
+    Log.notice("Sending data on port %i: %s", port, describe(message).c_str());
 
-    if (_state != TTNDeviceStateReady) {
+    if (_state != SimpleTTNStateReady) {
         Log.error("Can't send data in state %s", describe(_state).c_str());
         return false;
     }
@@ -174,49 +174,49 @@ bool TTNDevice::send(std::vector<uint8_t> message, uint8_t port, bool confirm) {
     }
     
     _pendingMessage = message;
-    _state = TTNDeviceStateTransceiving;
+    _state = SimpleTTNStateTransceiving;
 
     LMIC_setTxData2(port, _pendingMessage.data(), _pendingMessage.size(), confirm ? 1 : 0);
     return true;
 }
 
-// void TTNDevice::sendMessageAsync(std::vector<uint8_t> data) {
+// void SimpleTTN::sendMessageAsync(std::vector<uint8_t> data) {
 
 // }
 
-// void TTNDevice::onMessage(void (*callback)(const uint8_t* payload, size_t size, int rssi)) {
+// void SimpleTTN::onMessage(void (*callback)(const uint8_t* payload, size_t size, int rssi)) {
     
 // }
 
-std::string TTNDevice::deviceEUI() const {
+std::string SimpleTTN::deviceEUI() const {
     return describe(_devEui);
 }
 
-std::string TTNDevice::appEUI() const {
+std::string SimpleTTN::appEUI() const {
     return describe(_appEui);
 }
 
-std::string TTNDevice::appKey() const {
+std::string SimpleTTN::appKey() const {
     return describe(_appKey);
 }
 
-std::string TTNDevice::deviceAddress() const {
+std::string SimpleTTN::deviceAddress() const {
     return describe(_deviceAddress);
 }
 
-std::string TTNDevice::networkKey() const {
+std::string SimpleTTN::networkKey() const {
     return describe(_networkKey);
 }
 
-std::string TTNDevice::appSessionKey() const {
+std::string SimpleTTN::appSessionKey() const {
     return describe(_appSessionKey);
 }
 
-uint32_t TTNDevice::sequenceNumberUp() const {
+uint32_t SimpleTTN::sequenceNumberUp() const {
     return _sequenceNumberUp;
 }
 
-std::string TTNDevice::statusDescription() {
+std::string SimpleTTN::statusDescription() {
     std::stringstream stream;
 
     stream << "-----------------------------" << std::endl;
@@ -246,13 +246,13 @@ std::string TTNDevice::statusDescription() {
 
 /// PRIVATE
 
-void TTNDevice::handleEvent_JOINING() {
+void SimpleTTN::handleEvent_JOINING() {
     Log.trace("handleEvent_JOINING");
     // TODO log joining
-    _state = TTNDeviceStateJoining;
+    _state = SimpleTTNStateJoining;
 }
 
-void TTNDevice::handleEvent_JOINED() {
+void SimpleTTN::handleEvent_JOINED() {
     Log.trace("handleEvent_JOINED");
 
     u4_t netId;
@@ -271,35 +271,34 @@ void TTNDevice::handleEvent_JOINED() {
     LMIC_setLinkCheckMode(_configuration.linkCheckEnabled ? 1 : 0);
 
     // TODO log current state
-    _state = TTNDeviceStateReady;
+    _state = SimpleTTNStateReady;
 }
 
-void TTNDevice::handleEvent_JOIN_TXCOMPLETE() {
+void SimpleTTN::handleEvent_JOIN_TXCOMPLETE() {
     Log.trace("handleEvent_JOIN_TXCOMPLETE");
     Log.warning("Waiting to join - Reuse previous keys if possible");
 }
 
-void TTNDevice::handleEvent_JOIN_FAILED() {
+void SimpleTTN::handleEvent_JOIN_FAILED() {
     Log.trace("handleEvent_JOIN_FAILED");
     // TODO Log error
-    _state = TTNDeviceStateJoinFailed;
+    _state = SimpleTTNStateJoinFailed;
 }
 
-void TTNDevice::handleEvent_TXSTART() {
+void SimpleTTN::handleEvent_TXSTART() {
     Log.trace("handleEvent_TXSTART");
 
 }
 
-void TTNDevice::handleEvent_TXCOMPLETE() {
+void SimpleTTN::handleEvent_TXCOMPLETE() {
     Log.trace("handleEvent_TXCOMPLETE");
     
     _sequenceNumberUp = LMIC.seqnoUp;
-    Log.notice("sequenceNumberUp: %i", _sequenceNumberUp);
-    Log.notice("txrxFlags: %b", LMIC.txrxFlags);
+    Log.trace("sequenceNumberUp: %i", _sequenceNumberUp);
+    Log.trace("txrxFlags: %b", LMIC.txrxFlags);
     if (LMIC.txrxFlags & TXRX_ACK) {
-        Log.notice("Received ACK");
+        Log.trace("Received ACK");
         // todo invoke callback for blocking send   
-        // LMIC_clrTxData();
     }
 
     std::vector<u1_t> data;
@@ -309,8 +308,8 @@ void TTNDevice::handleEvent_TXCOMPLETE() {
       Log.trace("Received data (%i bytes, dataBeg %i): %s", LMIC.dataLen, LMIC.dataBeg, describe(data).c_str());
     }
 
-    if (_state == TTNDeviceStateTransceiving) {
-        _state = TTNDeviceStateReady;
+    if (_state == SimpleTTNStateTransceiving) {
+        _state = SimpleTTNStateReady;
         _pendingMessage = {};
     }
 
@@ -318,43 +317,43 @@ void TTNDevice::handleEvent_TXCOMPLETE() {
 
 }
 
-void TTNDevice::taskLoop(void* parameter) {
+void SimpleTTN::taskLoop(void* parameter) {
     for (;;) {
         os_runloop_once();
         vTaskDelay(16 / portTICK_PERIOD_MS); // delay 16 ms each run loop
     }
 }
 
-void TTNDevice::startLoop() {
+void SimpleTTN::startLoop() {
     // TODO: Consider not pinned to core
     xTaskCreatePinnedToCore(taskLoop, "taskLoop", 2048, (void*)1, (5 | portPRIVILEGE_BIT), &_taskHandle, 1);
 }
 
-void TTNDevice::stopLoop() {
+void SimpleTTN::stopLoop() {
     vTaskDelete(_taskHandle);
     _taskHandle = 0;
 }
 
 /// LMIC Callbacks
 void os_getArtEui(u1_t* buf) {
-    std::vector<uint8_t> b = TTNDevice::instance()->_appEui;
+    std::vector<uint8_t> b = SimpleTTN::instance()->_appEui;
     std::reverse(b.begin(),  b.end());  
     std::copy(b.begin(), b.end(), buf);
 }
 
 void os_getDevEui(u1_t* buf) {
-    std::vector<uint8_t> b = TTNDevice::instance()->_devEui;
+    std::vector<uint8_t> b = SimpleTTN::instance()->_devEui;
     std::reverse(b.begin(),  b.end());  
     std::copy(b.begin(), b.end(), buf);
 }
 
 void os_getDevKey(u1_t* buf) {
-    std::vector<uint8_t> b = TTNDevice::instance()->_appKey;
+    std::vector<uint8_t> b = SimpleTTN::instance()->_appKey;
     std::copy(b.begin(), b.end(), buf);
 }
 
 void onEvent(ev_t event) {
-    TTNDevice *dev = TTNDevice::instance();
+    SimpleTTN *dev = SimpleTTN::instance();
     switch(event) {
     case EV_JOINING:
         dev->handleEvent_JOINING();
