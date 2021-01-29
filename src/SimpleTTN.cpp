@@ -160,7 +160,7 @@ bool SimpleTTN::poll(uint8_t port, bool confirm) {
     return true;
 }
 
-bool SimpleTTN::send(std::vector<uint8_t> message, uint8_t port, bool confirm) {
+bool SimpleTTN::send(const std::vector<uint8_t> &message, uint8_t port, bool confirm) {
     Log.notice("Sending data on port %i: %s", port, describe(message).c_str());
 
     if (_state != SimpleTTNStateReady) {
@@ -180,13 +180,9 @@ bool SimpleTTN::send(std::vector<uint8_t> message, uint8_t port, bool confirm) {
     return true;
 }
 
-// void SimpleTTN::sendMessageAsync(std::vector<uint8_t> data) {
-
-// }
-
-// void SimpleTTN::onMessage(void (*callback)(const uint8_t* payload, size_t size, int rssi)) {
-    
-// }
+void SimpleTTN::onMessage(void (*callback)(const std::vector<uint8_t> &payload, int rssi)) {
+    _messageCallback = callback;
+}
 
 std::string SimpleTTN::deviceEUI() const {
     return describe(_devEui);
@@ -313,8 +309,9 @@ void SimpleTTN::handleEvent_TXCOMPLETE() {
         _pendingMessage = {};
     }
 
-    // TODO: call general callback message
-
+    if (_messageCallback && data.size() > 0) {
+      _messageCallback(data, LMIC.rssi);
+    }
 }
 
 void SimpleTTN::taskLoop(void* parameter) {

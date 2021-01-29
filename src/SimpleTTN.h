@@ -49,11 +49,9 @@ public:
     void stop();
 
     bool poll(uint8_t port, bool confirm = false);
-    bool send(std::vector<uint8_t> message, uint8_t port, bool confirm = false);
+    bool send(const std::vector<uint8_t> &message, uint8_t port, bool confirm = false);
 
-
-    // TODO
-    // void onMessage(void (*callback)(const uint8_t* payload, size_t size, int rssi));
+    void onMessage(void (*callback)(const std::vector<uint8_t> &payload, int rssi));
 
     // TODO configure transmission power, data rate,
     // TODO getters for mac, frequency, etc
@@ -84,7 +82,7 @@ protected:
     std::vector<uint8_t> _appEui;
     std::vector<uint8_t> _appKey;
 
-    // Session state
+    // ABP / session
     std::vector<uint8_t> _deviceAddress;
     std::vector<uint8_t> _networkKey;
     std::vector<uint8_t> _appSessionKey;
@@ -94,6 +92,7 @@ protected:
 
     SimpleTTNState _state;
     std::vector<uint8_t> _pendingMessage;
+    void (*_messageCallback)(const std::vector<uint8_t> &payload, int rssi) = nullptr;
 private:
     // Loop function for the TTN task.
     static void taskLoop(void* parameter);
